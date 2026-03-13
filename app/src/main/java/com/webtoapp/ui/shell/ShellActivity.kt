@@ -72,6 +72,7 @@ import com.webtoapp.core.webview.LongPressHandler
 import com.webtoapp.core.i18n.Strings
 import com.webtoapp.core.webview.WebViewCallbacks
 import com.webtoapp.data.model.Announcement
+import com.webtoapp.data.model.DownloadHandling
 import com.webtoapp.data.model.LrcData
 import com.webtoapp.data.model.LrcLine
 import com.webtoapp.data.model.ScriptRunTime
@@ -1046,6 +1047,37 @@ fun ShellScreen(
 
     // WebView引用
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
+
+    // Pending download queue (used for ASK mode)
+    data class PendingDownloadRequest(
+        val url: String,
+        val userAgent: String,
+        val contentDisposition: String,
+        val mimeType: String,
+        val contentLength: Long
+    )
+
+    val downloadChoiceQueue = remember { mutableStateListOf<PendingDownloadRequest>() }
+
+    fun startInternalDownload(request: PendingDownloadRequest) {
+        (context as? ShellActivity)?.handleDownloadWithPermission(
+            request.url,
+            request.userAgent,
+            request.contentDisposition,
+            request.mimeType,
+            request.contentLength
+        )
+    }
+
+    fun openDownloadInBrowser(request: PendingDownloadRequest) {
+        DownloadHelper.openInBrowser(context, request.url)
+    }
+
+    fun popDownloadChoice() {
+        if (downloadChoiceQueue.isNotEmpty()) {
+            downloadChoiceQueue.removeAt(0)
+        }
+    }
     
     // 长按菜单状态
     var showLongPressMenu by remember { mutableStateOf(false) }
@@ -1494,10 +1526,25 @@ fun ShellScreen(
                 mimeType: String,
                 contentLength: Long
             ) {
-                // Check并请求存储权限后下载
-                (context as? ShellActivity)?.handleDownloadWithPermission(
-                    url, userAgent, contentDisposition, mimeType, contentLength
-                )
+                val request = PendingDownloadRequest(url, userAgent, contentDisposition, mimeType, contentLength)
+
+                val handling = try {
+                    DownloadHandling.valueOf(config.webViewConfig.downloadHandling.uppercase())
+                } catch (_: Exception) {
+                    DownloadHandling.INTERNAL
+                }
+
+                val isBlobOrData = url.startsWith("blob:") || url.startsWith("data:")
+
+                when (handling) {
+                    DownloadHandling.INTERNAL -> startInternalDownload(request)
+                    DownloadHandling.BROWSER -> {
+                        if (isBlobOrData) startInternalDownload(request) else openDownloadInBrowser(request)
+                    }
+                    DownloadHandling.ASK -> {
+                        if (isBlobOrData) startInternalDownload(request) else downloadChoiceQueue.add(request)
+                    }
+                }
             }
             
             override fun onLongPress(webView: WebView, x: Float, y: Float): Boolean {
@@ -2110,6 +2157,67 @@ com.webtoapp.ui.components.announcement.AnnouncementDialog(
     }
     
     // 长按菜单
+    val pendingDownloadChoice = downloadChoiceQueue.firstOrNull()
+    if (pendingDownloadChoice != null) {
+        val fileName = remember(pendingDownloadChoice.url, pendingDownloadChoice.contentDisposition, pendingDownloadChoice.mimeType) {
+            DownloadHelper.parseFileName(
+                pendingDownloadChoice.url,
+                pendingDownloadChoice.contentDisposition,
+                pendingDownloadChoice.mimeType
+            )
+        }
+        val isBlobOrData = pendingDownloadChoice.url.startsWith("blob:") || pendingDownloadChoice.url.startsWith("data:")
+
+        AlertDialog(
+            onDismissRequest = { popDownloadChoice() },
+            title = { Text("选择下载方式") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(text = fileName, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = pendingDownloadChoice.url,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                    if (isBlobOrData) {
+                        Text(
+                            text = "提示：blob/data 下载仅支持内置下载。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        startInternalDownload(pendingDownloadChoice)
+                        popDownloadChoice()
+                    }
+                ) {
+                    Text("内置下载")
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { popDownloadChoice() }) {
+                        Text(Strings.btnCancel)
+                    }
+                    TextButton(
+                        enabled = !isBlobOrData,
+                        onClick = {
+                            openDownloadInBrowser(pendingDownloadChoice)
+                            popDownloadChoice()
+                        }
+                    ) {
+                        Text("浏览器打开")
+                    }
+                }
+            }
+        )
+    }
     if (showLongPressMenu && longPressResult != null) {
         val menuStyle = config.webViewConfig.longPressMenuStyle
         

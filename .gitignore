@@ -23,6 +23,7 @@ build/
 # Local configuration file
 local.properties
 gradle/config.properties
+keystore.properties
 
 # Android Studio
 *.iml

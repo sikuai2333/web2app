@@ -589,6 +589,9 @@ data class WebViewShellConfig(
 
     @SerializedName("hideToolbar")
     val hideToolbar: Boolean = false,
+
+    @SerializedName("downloadHandling")
+    val downloadHandling: String = "INTERNAL", // INTERNAL / BROWSER / ASK
     
     @SerializedName("showStatusBarInFullscreen")
     val showStatusBarInFullscreen: Boolean = false,  // Fullscreen模式下是否显示状态栏

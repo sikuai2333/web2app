@@ -15,6 +15,7 @@ import com.webtoapp.core.crypto.KeyManager
 import com.webtoapp.core.crypto.toHexString
 import com.webtoapp.core.shell.BgmShellItem
 import com.webtoapp.core.shell.LrcShellTheme
+import com.webtoapp.data.model.DownloadHandling
 import com.webtoapp.data.model.LrcData
 import com.webtoapp.data.model.WebApp
 import kotlinx.coroutines.Dispatchers
@@ -1714,6 +1715,7 @@ fun WebApp.toApkConfig(packageName: String): ApkConfig {
         // Use user-configured hideToolbar setting, no longer force HTML/media apps to hide toolbar
         // User can choose whether to enable fullscreen mode when creating app
         hideToolbar = webViewConfig.hideToolbar,
+        downloadHandling = (webViewConfig.downloadHandling ?: DownloadHandling.INTERNAL).name,
         showStatusBarInFullscreen = webViewConfig.showStatusBarInFullscreen,
         landscapeMode = webViewConfig.landscapeMode,
         injectScripts = webViewConfig.injectScripts,

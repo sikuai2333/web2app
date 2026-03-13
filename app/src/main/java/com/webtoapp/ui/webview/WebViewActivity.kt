@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -60,6 +61,7 @@ import com.webtoapp.core.webview.LongPressHandler
 import com.webtoapp.core.webview.WebViewCallbacks
 import com.webtoapp.core.webview.WebViewManager
 import com.webtoapp.core.i18n.Strings
+import com.webtoapp.data.model.DownloadHandling
 import com.webtoapp.data.model.LongPressMenuStyle
 import com.webtoapp.data.model.SplashConfig
 import com.webtoapp.data.model.SplashOrientation
@@ -518,6 +520,14 @@ class WebViewActivity : AppCompatActivity() {
     }
 }
 
+private data class PendingDownloadRequest(
+    val url: String,
+    val userAgent: String,
+    val contentDisposition: String,
+    val mimeType: String,
+    val contentLength: Long
+)
+
 @SuppressLint("SetJavaScriptEnabled")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -570,6 +580,9 @@ fun WebViewScreen(
 
     // WebView引用
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
+
+    // Pending download queue (used for ASK mode)
+    val pendingDownloads = remember { mutableStateListOf<PendingDownloadRequest>() }
     
     // 长按菜单状态
     var showLongPressMenu by remember { mutableStateOf(false) }
@@ -578,6 +591,75 @@ fun WebViewScreen(
     var longPressTouchY by remember { mutableFloatStateOf(0f) }
     val scope = rememberCoroutineScope()
     val longPressHandler = remember { LongPressHandler(context, scope) }
+
+    fun startInternalDownload(request: PendingDownloadRequest) {
+        DownloadHelper.handleDownload(
+            context = context,
+            url = request.url,
+            userAgent = request.userAgent,
+            contentDisposition = request.contentDisposition,
+            mimeType = request.mimeType,
+            contentLength = request.contentLength,
+            method = DownloadHelper.DownloadMethod.DOWNLOAD_MANAGER,
+            scope = scope,
+            onBlobDownload = { blobUrl, filename ->
+                webViewRef?.evaluateJavascript(
+                    """
+                        (function() {
+                            try {
+                                const blobUrl = '$blobUrl';
+                                const filename = '$filename';
+
+                                if (blobUrl.startsWith('data:')) {
+                                    const parts = blobUrl.split(',');
+                                    const meta = parts[0];
+                                    const base64Data = parts[1];
+                                    const mimeMatch = meta.match(/data:([^;]+)/);
+                                    const mimeType = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+                                    if (window.AndroidDownload && window.AndroidDownload.saveBase64File) {
+                                        window.AndroidDownload.saveBase64File(base64Data, filename, mimeType);
+                                    }
+                                } else if (blobUrl.startsWith('blob:')) {
+                                    fetch(blobUrl)
+                                        .then(response => response.blob())
+                                        .then(blob => {
+                                            const reader = new FileReader();
+                                            reader.onloadend = function() {
+                                                const base64Data = reader.result.split(',')[1];
+                                                const mimeType = blob.type || 'application/octet-stream';
+                                                if (window.AndroidDownload && window.AndroidDownload.saveBase64File) {
+                                                    window.AndroidDownload.saveBase64File(base64Data, filename, mimeType);
+                                                }
+                                            };
+                                            reader.readAsDataURL(blob);
+                                        })
+                                        .catch(err => {
+                                            console.error('[DownloadHelper] Blob fetch failed:', err);
+                                            if (window.AndroidDownload && window.AndroidDownload.showToast) {
+                                                window.AndroidDownload.showToast('下载失败: ' + err.message);
+                                            }
+                                        });
+                                }
+                            } catch(e) {
+                                console.error('[DownloadHelper] Error:', e);
+                            }
+                        })();
+                    """.trimIndent(),
+                    null
+                )
+            }
+        )
+    }
+
+    fun openDownloadInBrowser(request: PendingDownloadRequest) {
+        DownloadHelper.openInBrowser(context, request.url)
+    }
+
+    fun popPendingDownload() {
+        if (pendingDownloads.isNotEmpty()) {
+            pendingDownloads.removeAt(0)
+        }
+    }
     
     // 控制台状态
     var showConsole by remember { mutableStateOf(false) }
@@ -883,6 +965,31 @@ fun WebViewScreen(
             ) {
                 // 使用系统下载管理器下载到 Download 文件夹
                 // Media文件会自动保存到相册
+                val request = PendingDownloadRequest(
+                    url = url,
+                    userAgent = userAgent,
+                    contentDisposition = contentDisposition,
+                    mimeType = mimeType,
+                    contentLength = contentLength
+                )
+                
+                val handling = webApp?.webViewConfig?.downloadHandling ?: DownloadHandling.INTERNAL
+                
+                // Browser handling: let external browser manage downloads
+                if (handling == DownloadHandling.BROWSER) {
+                    openDownloadInBrowser(request)
+                    return
+                }
+                
+                // Ask mode: show dialog and wait for user choice
+                // Note: blob:/data: URLs are context-bound; opening in external browser is usually not possible.
+                if (handling == DownloadHandling.ASK &&
+                    !url.startsWith("blob:") &&
+                    !url.startsWith("data:")) {
+                    pendingDownloads.add(request)
+                    return
+                }
+                
                 DownloadHelper.handleDownload(
                     context = context,
                     url = url,
@@ -1492,6 +1599,68 @@ com.webtoapp.ui.components.announcement.AnnouncementDialog(
     }
     
     // 长按菜单
+    val pendingDownload = pendingDownloads.firstOrNull()
+    if (pendingDownload != null) {
+        val fileName = remember(pendingDownload.url, pendingDownload.contentDisposition, pendingDownload.mimeType) {
+            DownloadHelper.parseFileName(
+                pendingDownload.url,
+                pendingDownload.contentDisposition,
+                pendingDownload.mimeType
+            )
+        }
+        val isBlobOrData = pendingDownload.url.startsWith("blob:") || pendingDownload.url.startsWith("data:")
+        
+        AlertDialog(
+            onDismissRequest = { popPendingDownload() },
+            title = { Text("选择下载方式") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(text = fileName, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = pendingDownload.url,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (isBlobOrData) {
+                        Text(
+                            text = "提示：blob/data 下载仅支持内置下载。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        startInternalDownload(pendingDownload)
+                        popPendingDownload()
+                    }
+                ) {
+                    Text("内置下载")
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { popPendingDownload() }) {
+                        Text(Strings.btnCancel)
+                    }
+                    TextButton(
+                        enabled = !isBlobOrData,
+                        onClick = {
+                            openDownloadInBrowser(pendingDownload)
+                            popPendingDownload()
+                        }
+                    ) {
+                        Text("浏览器打开")
+                    }
+                }
+            }
+        )
+    }
+    
     if (showLongPressMenu && longPressResult != null) {
         val menuStyle = webApp?.webViewConfig?.longPressMenuStyle ?: LongPressMenuStyle.FULL
         

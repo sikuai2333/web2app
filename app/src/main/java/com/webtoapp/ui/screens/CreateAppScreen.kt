@@ -1544,6 +1544,7 @@ fun AdBlockCard(
 /**
  * WebView configuration卡片
  */
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun WebViewConfigCard(
     config: WebViewConfig,
@@ -1636,6 +1637,56 @@ fun WebViewConfigCard(
                     subtitle = Strings.externalLinksSettingHint,
                     checked = config.openExternalLinks,
                     onCheckedChange = { onConfigChange(config.copy(openExternalLinks = it)) }
+                )
+
+                Divider(modifier = Modifier.padding(vertical = 8.dp))
+                
+                // 下载处理策略
+                Text(
+                    text = "下载管理",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "识别到下载任务时的处理方式",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                val effectiveDownloadHandling = config.downloadHandling ?: DownloadHandling.INTERNAL
+                
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = effectiveDownloadHandling == DownloadHandling.INTERNAL,
+                        onClick = { onConfigChange(config.copy(downloadHandling = DownloadHandling.INTERNAL)) },
+                        label = { Text("内置下载") }
+                    )
+                    FilterChip(
+                        selected = effectiveDownloadHandling == DownloadHandling.BROWSER,
+                        onClick = { onConfigChange(config.copy(downloadHandling = DownloadHandling.BROWSER)) },
+                        label = { Text("浏览器打开") }
+                    )
+                    FilterChip(
+                        selected = effectiveDownloadHandling == DownloadHandling.ASK,
+                        onClick = { onConfigChange(config.copy(downloadHandling = DownloadHandling.ASK)) },
+                        label = { Text("每次询问") }
+                    )
+                }
+                
+                Text(
+                    text = when (effectiveDownloadHandling) {
+                        DownloadHandling.INTERNAL -> "默认使用内置下载（系统下载管理器/媒体保存）。"
+                        DownloadHandling.BROWSER -> "直接将下载链接交给外部浏览器处理。"
+                        DownloadHandling.ASK -> "每次下载时弹窗选择：内置下载 / 浏览器打开。"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
                 )
                 
                 SettingsSwitch(

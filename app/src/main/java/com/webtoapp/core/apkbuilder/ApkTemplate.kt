@@ -134,6 +134,7 @@ class ApkTemplate(private val context: Context) {
                 "userAgentMode": "${config.userAgentMode}",
                 "customUserAgent": ${config.customUserAgent?.let { "\"${escapeJson(it)}\"" } ?: "null"},
                 "hideToolbar": ${config.hideToolbar},
+                "downloadHandling": "${config.downloadHandling}",
                 "showStatusBarInFullscreen": ${config.showStatusBarInFullscreen},
                 "landscapeMode": ${config.landscapeMode},
                 "injectScripts": [${config.injectScripts.joinToString(",") { script ->
@@ -410,6 +411,7 @@ data class ApkConfig(
     val userAgentMode: String = "DEFAULT", // User-Agent 模式: DEFAULT, CHROME_MOBILE, CHROME_DESKTOP, SAFARI_MOBILE, SAFARI_DESKTOP, FIREFOX_MOBILE, FIREFOX_DESKTOP, EDGE_MOBILE, EDGE_DESKTOP, CUSTOM
     val customUserAgent: String? = null, // Custom User-Agent（仅 CUSTOM 模式使用）
     val hideToolbar: Boolean = false,
+    val downloadHandling: String = "INTERNAL", // INTERNAL, BROWSER, ASK
     val showStatusBarInFullscreen: Boolean = false,  // Fullscreen模式下是否显示状态栏
     val landscapeMode: Boolean = false, // Landscape模式
     val injectScripts: List<com.webtoapp.data.model.UserScript> = emptyList(), // User注入脚本

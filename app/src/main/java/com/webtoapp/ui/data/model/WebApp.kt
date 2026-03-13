@@ -265,6 +265,19 @@ enum class UserAgentMode(
 }
 
 /**
+ * 下载处理策略
+ *
+ * INTERNAL：使用内置下载（系统 DownloadManager + 媒体保存等增强能力）
+ * BROWSER：将下载链接交给外部浏览器处理
+ * ASK：每次识别到下载任务时弹窗让用户选择
+ */
+enum class DownloadHandling {
+    INTERNAL,
+    BROWSER,
+    ASK
+}
+
+/**
  * WebView configuration
  */
 data class WebViewConfig(
@@ -281,6 +294,7 @@ data class WebViewConfig(
     val swipeRefreshEnabled: Boolean = true,
     val fullscreenEnabled: Boolean = true,
     val downloadEnabled: Boolean = true,
+    val downloadHandling: DownloadHandling? = DownloadHandling.INTERNAL, // 下载处理策略（为兼容旧配置允许为 null）
     val openExternalLinks: Boolean = false, // External链接是否在浏览器打开
     val hideToolbar: Boolean = false, // Hide工具栏（全屏模式，无浏览器特征）
     val showStatusBarInFullscreen: Boolean = false, // Fullscreen模式下是否显示状态栏

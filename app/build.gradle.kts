@@ -1,3 +1,16 @@
+import java.io.FileInputStream
+import java.util.Properties
+
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties()
+val hasReleaseKeystore = keystorePropertiesFile.exists()
+
+if (hasReleaseKeystore) {
+    FileInputStream(keystorePropertiesFile).use { input ->
+        keystoreProperties.load(input)
+    }
+}
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -7,11 +20,13 @@ plugins {
 android {
 
     signingConfigs {
-        create("shiaho") {
-            storeFile = file("/Users/shiaho/Desktop/shiaho-key.jks")
-            storePassword = "shiaho"
-            keyAlias = "shiaho"
-            keyPassword = "shiaho"
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
         }
     }
     namespace = "com.webtoapp"
@@ -56,7 +71,12 @@ android {
             // WebToApp 需要使用自身 APK 作为模板，混淆会导致 Shell APK 无法运行
             isMinifyEnabled = false
             isShrinkResources = false
-            signingConfig = signingConfigs.getByName("shiaho")
+            // 未配置 keystore.properties 时，使用 debug 签名保证本地可直接构建 Release（便于测试）。
+            signingConfig = if (hasReleaseKeystore) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
