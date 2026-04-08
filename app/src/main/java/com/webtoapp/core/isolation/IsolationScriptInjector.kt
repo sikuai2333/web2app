@@ -274,33 +274,71 @@ object IsolationScriptInjector {
      */
     private fun generateWebRTCBlockScript(): String {
         return """
-            // WebRTC 防泄漏
-            if (typeof RTCPeerConnection !== 'undefined') {
-                const originalRTCPeerConnection = RTCPeerConnection;
-                
-                RTCPeerConnection = function(config) {
-                    // 移除 STUN/TURN 服务器配置
-                    if (config && config.iceServers) {
-                        config.iceServers = [];
-                    }
-                    return new originalRTCPeerConnection(config);
-                };
-                
-                RTCPeerConnection.prototype = originalRTCPeerConnection.prototype;
-                
-                // 阻止本地 IP 泄漏
-                const originalCreateOffer = RTCPeerConnection.prototype.createOffer;
-                RTCPeerConnection.prototype.createOffer = function() {
-                    return originalCreateOffer.apply(this, arguments).then(function(offer) {
-                        // 移除候选者中的本地 IP
-                        offer.sdp = offer.sdp.replace(/a=candidate:.*typ host.*/g, '');
-                        return offer;
-                    });
-                };
-            }
-            
-            // Disable getUserMedia（可选）
-            // navigator.mediaDevices.getUserMedia = undefined;
+            // WebRTC 防泄漏 - 完全禁用 WebRTC 和相关接口
+            (function() {
+                // 1. 完全禁用 RTCPeerConnection
+                if (typeof RTCPeerConnection !== 'undefined') {
+                    window.RTCPeerConnection = function() {
+                        throw new Error('WebRTC is disabled for privacy protection');
+                    };
+                    window.webkitRTCPeerConnection = undefined;
+                    window.RTCPeerConnection.prototype = {};
+                }
+
+                // 2. 禁用 webkitRTCPeerConnection (旧版浏览器)
+                if (typeof webkitRTCPeerConnection !== 'undefined') {
+                    window.webkitRTCPeerConnection = function() {
+                        throw new Error('WebRTC is disabled for privacy protection');
+                    };
+                }
+
+                // 3. 禁用 MediaDevices.getUserMedia（防止IP通过STUN泄露）
+                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                    const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+                    navigator.mediaDevices.getUserMedia = function() {
+                        // 仅允许非音频/视频的枚举操作
+                        return Promise.reject(new Error('MediaDevices is restricted for privacy protection'));
+                    };
+                }
+
+                // 4. 禁用旧版 getUserMedia
+                if (navigator.getUserMedia) {
+                    navigator.getUserMedia = undefined;
+                }
+
+                // 5. 禁用 webkitGetUserMedia
+                if (navigator.webkitGetUserMedia) {
+                    navigator.webkitGetUserMedia = undefined;
+                }
+
+                // 6. 禁用 RTCDataChannel
+                if (typeof RTCDataChannel !== 'undefined') {
+                    window.RTCDataChannel = undefined;
+                }
+
+                // 7. 清空 iceServers 配置
+                if (typeof RTCIceCandidate !== 'undefined') {
+                    try {
+                        const origRTCIceCandidate = RTCIceCandidate;
+                        window.RTCIceCandidate = function(args) {
+                            // 过滤掉本地IP型候选者
+                            if (args && args.candidate && args.candidate.indexOf('typ host') !== -1) {
+                                return null;
+                            }
+                            return args ? new origRTCIceCandidate(args) : null;
+                        };
+                    } catch(e) {}
+                }
+
+                // 8. 清空 webRTC 相关事件
+                try {
+                    delete window.RTCPeerConnection;
+                    delete window.webkitRTCPeerConnection;
+                    delete window.RTCIceCandidate;
+                } catch(e) {}
+
+                console.log('[WebToApp] WebRTC已完全禁用（防泄漏）');
+            })();
         """.trimIndent()
     }
     
