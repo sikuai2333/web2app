@@ -1,9 +1,12 @@
 package com.webtoapp.core.isolation
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import android.webkit.WebView
 import com.google.gson.Gson
+import java.net.NetworkInterface
 
 /**
  * 隔离环境管理器
@@ -245,5 +248,72 @@ class IsolationManager(private val context: Context) {
         currentConfig ?: return
         currentFingerprint = generateNewFingerprint(java.util.UUID.randomUUID().toString())
         Log.d(TAG, "指纹已重新生成")
+    }
+
+    // ==================== 代理/VPN 检测 ====================
+
+    /**
+     * 检测是否使用了系统代理
+     */
+    fun isProxySet(): Boolean {
+        return try {
+            val proxyHost = System.getProperty("http.proxyHost")
+            val proxyPort = System.getProperty("http.proxyPort")
+            !proxyHost.isNullOrBlank() && !proxyPort.isNullOrBlank()
+        } catch (e: Exception) {
+            Log.e(TAG, "代理检测失败", e)
+            false
+        }
+    }
+
+    /**
+     * 检测是否正在使用VPN
+     */
+    fun isVpnActive(): Boolean {
+        return try {
+            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return false
+            while (interfaces.hasMoreElements()) {
+                val networkInterface = interfaces.nextElement()
+                val name = networkInterface.name
+                // VPN接口通常命名为 tun0, ppp0, tap0, wg0(wireguard)
+                if ((name.equals("tun0", ignoreCase = true) ||
+                            name.equals("ppp0", ignoreCase = true) ||
+                            name.equals("tap0", ignoreCase = true) ||
+                            name.equals("wg0", ignoreCase = true)) &&
+                    networkInterface.isUp
+                ) {
+                    Log.w(TAG, "检测到VPN接口: $name")
+                    return true
+                }
+            }
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "VPN检测失败", e)
+            false
+        }
+    }
+
+    /**
+     * 通过ConnectivityManager检测VPN
+     */
+    fun isVpnActiveCm(): Boolean {
+        return try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                ?: return false
+            val network = cm.activeNetwork ?: return false
+            val caps = cm.getNetworkCapabilities(network) ?: return false
+            // VPN网络通常具有TRANSPORT_VPN或没有WIFI/CELLULAR标志
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+        } catch (e: Exception) {
+            Log.e(TAG, "VPN检测(CM)失败", e)
+            false
+        }
+    }
+
+    /**
+     * 综合检测：代理或VPN是否激活
+     */
+    fun isNetworkCompromised(): Boolean {
+        return isProxySet() || isVpnActive() || isVpnActiveCm()
     }
 }
