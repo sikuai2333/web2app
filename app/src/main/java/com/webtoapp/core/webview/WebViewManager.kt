@@ -159,11 +159,11 @@ class WebViewManager(
 
                 // Other settings
                 mediaPlaybackRequiresUserGesture = false
-                
-                // Allow file:// protocol pages to load external resources (CDN, etc.)
-                // Required for local frontend projects loading CDN
-                allowFileAccessFromFileURLs = true
-                allowUniversalAccessFromFileURLs = true
+
+                // 安全加固：禁用跨域文件访问，防止本地文件泄漏
+                // 如需加载本地前端项目的CDN资源，应使用loadDataWithBaseURL而非file://协议
+                allowFileAccessFromFileURLs = false
+                allowUniversalAccessFromFileURLs = false
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     safeBrowsingEnabled = true
@@ -373,7 +373,20 @@ class WebViewManager(
                 handler: SslErrorHandler?,
                 error: android.net.http.SslError?
             ) {
-                // By default reject insecure SSL connections
+                // 严格拒绝所有SSL错误，防止MITM中间人攻击和证书劫持
+                // 包括：自签名证书、过期证书、主机名不匹配、未受信任CA等
+                if (error != null) {
+                    val errorType = when (error.primaryError) {
+                        android.net.http.SslError.SSL_DATE_INVALID -> "证书日期无效"
+                        android.net.http.SslError.SSL_EXPIRED -> "证书已过期"
+                        android.net.http.SslError.SSL_IDMISMATCH -> "主机名不匹配"
+                        android.net.http.SslError.SSL_NOTYETVALID -> "证书尚未生效"
+                        android.net.http.SslError.SSL_UNTRUSTED -> "不受信任的CA证书"
+                        android.net.http.SslError.SSL_INVALID -> "证书无效"
+                        else -> "未知SSL错误(${error.primaryError})"
+                    }
+                    android.util.Log.w("WebViewManager", "SSL错误拒绝: $errorType - ${error.url}")
+                }
                 handler?.cancel()
                 callbacks.onSslError(error?.toString() ?: "SSL Error")
             }
