@@ -9,31 +9,11 @@ import kotlin.random.Random
  */
 object FingerprintGenerator {
     
-    // 常见 User-Agent 列表
-    private val userAgents = listOf(
-        // Chrome Windows
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
-        // Chrome Mac
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-        // Firefox Windows
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
-        // Firefox Mac
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0",
-        // Safari
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-        // Edge
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0"
-    )
+    // UA列表已按浏览器类型分组，见下方 chromeWindowsUas/chromeMacUas 等
+    // private val userAgents = listOf(...) -- 已废弃
     
-    // 常见平台
-    private val platforms = listOf("Win32", "MacIntel", "Linux x86_64")
-    
-    // 常见厂商
-    private val vendors = listOf("Google Inc.", "Apple Computer, Inc.", "")
+    // 常见平台（不再单独使用，由浏览器类型决定）
+    // private val platforms = listOf("Win32", "MacIntel", "Linux x86_64")
     
     // 常见语言
     private val languages = listOf(
@@ -63,19 +43,101 @@ object FingerprintGenerator {
         Pair(1440, 900),
         Pair(1280, 720)
     )
+
+    // 按浏览器+OS分组的UA，确保指纹一致性
+    private val chromeWindowsUas = listOf(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
+    )
+
+    private val chromeMacUas = listOf(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+    )
+
+    private val firefoxWindowsUas = listOf(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0"
+    )
+
+    private val firefoxMacUas = listOf(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0"
+    )
+
+    private val safariUas = listOf(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15"
+    )
+
+    private val edgeUas = listOf(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0"
+    )
+
+    // WebGL Vendor/Renderer 合理配对
+    private val webglVendors = listOf(
+        "Google Inc. (NVIDIA)",
+        "Google Inc. (Intel)",
+        "Google Inc. (AMD)",
+        "Intel Inc.",
+        "NVIDIA Corporation"
+    )
+
+    private val webglRenderers = listOf(
+        "ANGLE (NVIDIA GeForce GTX 1080 Direct3D11 vs_5_0 ps_5_0)",
+        "ANGLE (Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0)",
+        "ANGLE (AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0)",
+        "Intel Iris OpenGL Engine",
+        "AMD Radeon Pro 5500M OpenGL Engine"
+    )
     
     /**
      * 生成随机指纹
+     * 确保UA/Platform/Vendor之间的逻辑一致性，避免自相矛盾被检测
      */
     fun generateFingerprint(seed: String? = null): GeneratedFingerprint {
         val random = if (seed != null) Random(seed.hashCode().toLong()) else Random
-        
+
         val resolution = screenResolutions[random.nextInt(screenResolutions.size)]
-        
+
+        // 按浏览器类型分组，确保 UA/Platform/Vendor 一致
+        val browserTypeIndex = random.nextInt(4) // 0=Chrome, 1=Firefox, 2=Safari, 3=Edge
+        val osIndex = random.nextInt(2) // 0=Windows, 1=Mac
+
+        val (userAgent, platform, vendor) = when (browserTypeIndex) {
+            0 -> { // Chrome
+                val ua = if (osIndex == 0) {
+                    // Chrome Windows
+                    chromeWindowsUas[random.nextInt(chromeWindowsUas.size)]
+                } else {
+                    // Chrome Mac
+                    chromeMacUas[random.nextInt(chromeMacUas.size)]
+                }
+                val plat = if (osIndex == 0) "Win32" else "MacIntel"
+                Triple(ua, plat, "Google Inc.")
+            }
+            1 -> { // Firefox
+                val ua = if (osIndex == 0) {
+                    firefoxWindowsUas[random.nextInt(firefoxWindowsUas.size)]
+                } else {
+                    firefoxMacUas[random.nextInt(firefoxMacUas.size)]
+                }
+                val plat = if (osIndex == 0) "Win32" else "MacIntel"
+                Triple(ua, plat, "")
+            }
+            2 -> { // Safari - 只有Mac版本
+                val ua = safariUas[random.nextInt(safariUas.size)]
+                Triple(ua, "MacIntel", "Apple Computer, Inc.")
+            }
+            else -> { // Edge
+                val ua = edgeUas[random.nextInt(edgeUas.size)]
+                Triple(ua, "Win32", "Google Inc.")
+            }
+        }
+
         return GeneratedFingerprint(
-            userAgent = userAgents[random.nextInt(userAgents.size)],
-            platform = platforms[random.nextInt(platforms.size)],
-            vendor = vendors[random.nextInt(vendors.size)],
+            userAgent = userAgent,
+            platform = platform,
+            vendor = vendor,
             language = languages[random.nextInt(languages.size)],
             timezone = timezones[random.nextInt(timezones.size)],
             screenWidth = resolution.first,
@@ -85,20 +147,8 @@ object FingerprintGenerator {
             deviceMemory = listOf(2, 4, 8, 16)[random.nextInt(4)],
             canvasNoise = random.nextFloat() * 0.0001f,
             audioNoise = random.nextFloat() * 0.0001f,
-            webglVendor = listOf(
-                "Google Inc. (NVIDIA)",
-                "Google Inc. (Intel)",
-                "Google Inc. (AMD)",
-                "Intel Inc.",
-                "NVIDIA Corporation"
-            )[random.nextInt(5)],
-            webglRenderer = listOf(
-                "ANGLE (NVIDIA GeForce GTX 1080 Direct3D11 vs_5_0 ps_5_0)",
-                "ANGLE (Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0)",
-                "ANGLE (AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0)",
-                "Intel Iris OpenGL Engine",
-                "AMD Radeon Pro 5500M OpenGL Engine"
-            )[random.nextInt(5)]
+            webglVendor = webglVendors[random.nextInt(webglVendors.size)],
+            webglRenderer = webglRenderers[random.nextInt(webglRenderers.size)]
         )
     }
     
