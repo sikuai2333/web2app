@@ -18,7 +18,14 @@ release/
 
 # Gradle files
 .gradle/
+.gradle-local/
 build/
+
+# Android local tool state
+.android/
+
+# Node dependencies
+node_modules/
 
 # Local configuration file
 local.properties
