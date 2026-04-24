@@ -28,6 +28,7 @@ class WebViewManager(
     companion object {
         // Desktop Chrome User-Agent
         private const val DESKTOP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        private const val GENERIC_PAGE_LOAD_ERROR = "Page failed to load. Please check your network and try again."
         
         // Payment/Social App URL Scheme list
         private val PAYMENT_SCHEMES = setOf(
@@ -154,8 +155,12 @@ class WebViewManager(
                     textZoom = 100
                 }
 
-                // Mixed content - Allow HTTPS pages to load HTTP resources
-                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                // 混合内容策略：默认兼容旧行为，可按配置收紧为仅 HTTPS
+                mixedContentMode = if (config.blockMixedContent) {
+                    WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                } else {
+                    WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                }
 
                 // Other settings
                 mediaPlaybackRequiresUserGesture = false
@@ -359,13 +364,33 @@ class WebViewManager(
                 request: WebResourceRequest?,
                 error: WebResourceError?
             ) {
-                super.onReceivedError(view, request, error)
                 if (request?.isForMainFrame == true) {
+                    view?.stopLoading()
+                    view?.loadUrl("about:blank")
                     callbacks.onError(
                         error?.errorCode ?: -1,
-                        error?.description?.toString() ?: "Unknown error"
+                        GENERIC_PAGE_LOAD_ERROR
                     )
+                    return
                 }
+                super.onReceivedError(view, request, error)
+            }
+
+            override fun onReceivedHttpError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                errorResponse: WebResourceResponse?
+            ) {
+                if (request?.isForMainFrame == true) {
+                    view?.stopLoading()
+                    view?.loadUrl("about:blank")
+                    callbacks.onError(
+                        errorResponse?.statusCode ?: -1,
+                        GENERIC_PAGE_LOAD_ERROR
+                    )
+                    return
+                }
+                super.onReceivedHttpError(view, request, errorResponse)
             }
 
             override fun onReceivedSslError(
@@ -388,6 +413,8 @@ class WebViewManager(
                     android.util.Log.w("WebViewManager", "SSL错误拒绝: $errorType - ${error.url}")
                 }
                 handler?.cancel()
+                view?.stopLoading()
+                view?.loadUrl("about:blank")
                 callbacks.onSslError(error?.toString() ?: "SSL Error")
             }
         }

@@ -636,7 +636,16 @@ data class WebViewShellConfig(
     val popupBlockerEnabled: Boolean = true, // 启用弹窗拦截器
     
     @SerializedName("popupBlockerToggleEnabled")
-    val popupBlockerToggleEnabled: Boolean = false // Allow用户在运行时切换弹窗拦截开关
+    val popupBlockerToggleEnabled: Boolean = false, // Allow用户在运行时切换弹窗拦截开关
+    
+    @SerializedName("blockScreenshots")
+    val blockScreenshots: Boolean = false,
+    
+    @SerializedName("blockMixedContent")
+    val blockMixedContent: Boolean = false,
+    
+    @SerializedName("enableComplianceBlock")
+    val enableComplianceBlock: Boolean = false
 )
 
 /**

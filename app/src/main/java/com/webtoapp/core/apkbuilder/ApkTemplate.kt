@@ -152,6 +152,9 @@ class ApkTemplate(private val context: Context) {
                 "adBlockToggleEnabled": ${config.adBlockToggleEnabled},
                 "popupBlockerEnabled": ${config.popupBlockerEnabled},
                 "popupBlockerToggleEnabled": ${config.popupBlockerToggleEnabled},
+                "blockScreenshots": ${config.blockScreenshots},
+                "blockMixedContent": ${config.blockMixedContent},
+                "enableComplianceBlock": ${config.enableComplianceBlock},
                 "initialScale": ${config.initialScale},
                 "newWindowBehavior": "${config.newWindowBehavior}",
                 "enablePaymentSchemes": ${config.enablePaymentSchemes},
@@ -429,6 +432,9 @@ data class ApkConfig(
     val adBlockToggleEnabled: Boolean = false, // Allow用户在运行时切换广告拦截开关
     val popupBlockerEnabled: Boolean = true, // 启用弹窗拦截器
     val popupBlockerToggleEnabled: Boolean = false, // Allow用户在运行时切换弹窗拦截开关
+    val blockScreenshots: Boolean = false, // 启用后使用系统级防截图保护
+    val blockMixedContent: Boolean = false, // 启用后禁止混合内容
+    val enableComplianceBlock: Boolean = false, // 启用后在合规风险场景显示阻断页
     
     // 浏览器兼容性增强配置
     val initialScale: Int = 0, // Initial scale (0-200, 0=自动)

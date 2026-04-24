@@ -1695,6 +1695,27 @@ fun WebViewConfigCard(
                     checked = config.enableCrossOriginIsolation,
                     onCheckedChange = { onConfigChange(config.copy(enableCrossOriginIsolation = it)) }
                 )
+
+                SettingsSwitch(
+                    title = "防截图",
+                    subtitle = "启用后使用系统级保护，阻止截图与录屏，不影响复制、下载和外部打开功能",
+                    checked = config.blockScreenshots,
+                    onCheckedChange = { onConfigChange(config.copy(blockScreenshots = it)) }
+                )
+
+                SettingsSwitch(
+                    title = "禁止混合内容",
+                    subtitle = "启用后禁止 HTTPS 页面加载 HTTP 资源，用于增强链路合规性",
+                    checked = config.blockMixedContent,
+                    onCheckedChange = { onConfigChange(config.copy(blockMixedContent = it)) }
+                )
+
+                SettingsSwitch(
+                    title = "合规阻断",
+                    subtitle = "启用后在 SSL 安全错误等合规风险场景显示阻断页，不移除现有页面功能",
+                    checked = config.enableComplianceBlock,
+                    onCheckedChange = { onConfigChange(config.copy(enableComplianceBlock = it)) }
+                )
                 
                 Divider(modifier = Modifier.padding(vertical = 8.dp))
                 

@@ -10,6 +10,7 @@ import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.webkit.*
 import android.widget.FrameLayout
 import android.widget.Toast
@@ -69,6 +70,7 @@ import com.webtoapp.data.model.SplashType
 import com.webtoapp.data.model.WebApp
 import com.webtoapp.data.model.getActivationCodeStrings
 import com.webtoapp.ui.components.LongPressMenuSheet
+import com.webtoapp.ui.components.ComplianceBlockScreen
 import android.content.pm.ActivityInfo
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -560,6 +562,7 @@ fun WebViewScreen(
     var currentUrl by remember { mutableStateOf("") }
     var pageTitle by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var complianceBlockReason by remember { mutableStateOf<String?>(null) }
     var showActivationDialog by remember { mutableStateOf(false) }
     var showAnnouncementDialog by remember { mutableStateOf(false) }
     // Activation状态：默认未激活，防止 WebView 在检查完成前加载
@@ -688,6 +691,11 @@ fun WebViewScreen(
             statusBarBackgroundImage = app.webViewConfig.statusBarBackgroundImage
             statusBarBackgroundAlpha = app.webViewConfig.statusBarBackgroundAlpha
             statusBarHeightDp = app.webViewConfig.statusBarHeightDp
+            if (app.webViewConfig.blockScreenshots) {
+                activity.window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            } else {
+                activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
         }
     }
 
@@ -874,13 +882,13 @@ fun WebViewScreen(
         object : WebViewCallbacks {
             override fun onPageStarted(url: String?) {
                 isLoading = true
-                currentUrl = url ?: ""
+                currentUrl = if (url == "about:blank") "" else url ?: ""
             }
 
             override fun onPageFinished(url: String?) {
                 isLoading = false
                 isRefreshing = false
-                currentUrl = url ?: ""
+                currentUrl = if (url == "about:blank") "" else url ?: ""
                 webViewRef?.let {
                     canGoBack = it.canGoBack()
                     canGoForward = it.canGoForward()
@@ -901,12 +909,23 @@ fun WebViewScreen(
             override fun onIconReceived(icon: Bitmap?) {}
 
             override fun onError(errorCode: Int, description: String) {
-                errorMessage = description
+                webViewRef?.stopLoading()
+                webViewRef?.loadUrl("about:blank")
+                currentUrl = ""
+                pageTitle = ""
+                errorMessage = "Page failed to load. Please check your network and try again."
                 isLoading = false
             }
 
             override fun onSslError(error: String) {
-                errorMessage = "SSL安全错误"
+                if (webApp?.webViewConfig?.enableComplianceBlock == true) {
+                    webViewRef?.stopLoading()
+                    webViewRef?.loadUrl("about:blank")
+                    complianceBlockReason = "SSL security error detected. Access blocked by compliance policy."
+                    isLoading = false
+                } else {
+                    errorMessage = "SSL Error"
+                }
             }
 
             override fun onExternalLink(url: String) {
@@ -1353,6 +1372,12 @@ fun WebViewScreen(
                         }
                     }
                 }
+            } else if (complianceBlockReason != null) {
+                ComplianceBlockScreen(
+                    reason = complianceBlockReason!!,
+                    actionText = "Back",
+                    onAction = { activity.finish() }
+                )
             } else if (targetUrl.isNotEmpty() && isActivationChecked) {
                 // 控制台展开状态
                 var isConsoleExpanded by remember { mutableStateOf(false) }

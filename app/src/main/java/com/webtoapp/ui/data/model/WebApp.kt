@@ -313,6 +313,9 @@ data class WebViewConfig(
     val adBlockToggleEnabled: Boolean = false, // Allow用户在运行时切换广告拦截开关
     val popupBlockerEnabled: Boolean = true, // 启用弹窗拦截器（拦截 window.open 等弹窗广告）
     val popupBlockerToggleEnabled: Boolean = false, // Allow用户在运行时切换弹窗拦截开关
+    val blockScreenshots: Boolean = false, // 启用后使用系统级防截图/录屏保护
+    val blockMixedContent: Boolean = false, // 启用后禁止 HTTPS 页面加载 HTTP 子资源
+    val enableComplianceBlock: Boolean = false, // 启用后对合规风险场景显示阻断页
     
     // ============ 浏览器兼容性增强配置 ============
     val initialScale: Int = 0, // Initial scale (0-200, 0=自动)，解决 CSS zoom 不生效问题

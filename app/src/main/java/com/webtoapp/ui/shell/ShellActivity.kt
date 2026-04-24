@@ -67,6 +67,7 @@ import coil.request.ImageRequest
 import com.webtoapp.WebToAppApplication
 import com.webtoapp.core.activation.ActivationResult
 import com.webtoapp.core.adblock.AdBlocker
+import com.webtoapp.core.crypto.SecurityInitializer
 import com.webtoapp.core.shell.ShellConfig
 import com.webtoapp.core.webview.LongPressHandler
 import com.webtoapp.core.i18n.Strings
@@ -77,6 +78,7 @@ import com.webtoapp.data.model.LrcData
 import com.webtoapp.data.model.LrcLine
 import com.webtoapp.data.model.ScriptRunTime
 import com.webtoapp.data.model.WebViewConfig
+import com.webtoapp.ui.components.ComplianceBlockScreen
 import com.webtoapp.ui.components.ForcedRunCountdownOverlay
 import com.webtoapp.ui.components.LongPressMenuSheet
 import com.webtoapp.ui.components.VirtualNavigationBar
@@ -671,6 +673,22 @@ class ShellActivity : AppCompatActivity() {
         
         com.webtoapp.core.shell.ShellLogger.i("ShellActivity", "配置加载成功: ${config.appName}")
         
+        if (config.webViewConfig.blockScreenshots) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
+
+        val initialComplianceBlockReason = if (config.webViewConfig.enableComplianceBlock) {
+            if (SecurityInitializer.initialize(this)) {
+                null
+            } else {
+                "安全初始化未通过，当前页面已按合规策略阻断。"
+            }
+        } else {
+            null
+        }
+
         forcedRunConfig = config.forcedRunConfig
         
         // 记录配置详情
@@ -826,6 +844,7 @@ class ShellActivity : AppCompatActivity() {
                 
                 ShellScreen(
                     config = config,
+                    initialComplianceBlockReason = initialComplianceBlockReason,
                     onWebViewCreated = { wv ->
                         try {
                             webView = wv
@@ -943,6 +962,7 @@ class ShellActivity : AppCompatActivity() {
         com.webtoapp.core.shell.ShellLogger.logLifecycle("ShellActivity", "onDestroy")
         // Persist cookies before destroying WebView
         android.webkit.CookieManager.getInstance().flush()
+        SecurityInitializer.shutdown()
         // 只销毁 WebView，不清理存储数据（保留 localStorage 等）
         webView?.destroy()
         super.onDestroy()
@@ -954,6 +974,7 @@ class ShellActivity : AppCompatActivity() {
 @Composable
 fun ShellScreen(
     config: ShellConfig,
+    initialComplianceBlockReason: String? = null,
     onWebViewCreated: (WebView) -> Unit,
     onFileChooser: (ValueCallback<Array<Uri>>?, WebChromeClient.FileChooserParams?) -> Boolean,
     onShowCustomView: (View, WebChromeClient.CustomViewCallback?) -> Unit,
@@ -994,6 +1015,7 @@ fun ShellScreen(
     var currentUrl by remember { mutableStateOf("") }
     var pageTitle by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var complianceBlockReason by remember { mutableStateOf(initialComplianceBlockReason) }
     var showActivationDialog by remember { mutableStateOf(false) }
     var showAnnouncementDialog by remember { mutableStateOf(false) }
     
@@ -1422,13 +1444,13 @@ fun ShellScreen(
         object : WebViewCallbacks {
             override fun onPageStarted(url: String?) {
                 isLoading = true
-                currentUrl = url ?: ""
+                currentUrl = if (url == "about:blank") "" else url ?: ""
                 com.webtoapp.core.shell.ShellLogger.logWebView("开始加载", url ?: "")
             }
 
             override fun onPageFinished(url: String?) {
                 isLoading = false
-                currentUrl = url ?: ""
+                currentUrl = if (url == "about:blank") "" else url ?: ""
                 com.webtoapp.core.shell.ShellLogger.logWebView("Loading complete", url ?: "")
                 webViewRef?.let {
                     canGoBack = it.canGoBack()
@@ -1455,14 +1477,26 @@ fun ShellScreen(
             override fun onIconReceived(icon: Bitmap?) {}
 
             override fun onError(errorCode: Int, description: String) {
-                errorMessage = description
+                webViewRef?.stopLoading()
+                webViewRef?.loadUrl("about:blank")
+                currentUrl = ""
+                pageTitle = ""
+                errorMessage = "Page failed to load. Please check your network and try again."
                 isLoading = false
                 com.webtoapp.core.shell.ShellLogger.logWebView("加载错误", currentUrl, "errorCode=$errorCode, description=$description")
             }
 
             override fun onSslError(error: String) {
-                errorMessage = "SSL安全错误"
-                com.webtoapp.core.shell.ShellLogger.logWebView("SSL错误", currentUrl, error)
+                if (config.webViewConfig.enableComplianceBlock) {
+                    webViewRef?.stopLoading()
+                    webViewRef?.loadUrl("about:blank")
+                    complianceBlockReason = "SSL security error detected. Access blocked by compliance policy."
+                    isLoading = false
+                    com.webtoapp.core.shell.ShellLogger.logWebView("SSL Error", currentUrl, error)
+                    return
+                }
+                errorMessage = "SSL Error"
+                com.webtoapp.core.shell.ShellLogger.logWebView("SSL Error", currentUrl, error)
             }
 
             override fun onExternalLink(url: String) {
@@ -1601,6 +1635,8 @@ fun ShellScreen(
         zoomEnabled = config.webViewConfig.zoomEnabled,
         desktopMode = config.webViewConfig.desktopMode,
         userAgent = config.webViewConfig.userAgent,
+        blockMixedContent = config.webViewConfig.blockMixedContent,
+        enableComplianceBlock = config.webViewConfig.enableComplianceBlock,
         downloadEnabled = true // 确保下载功能始终启用
     )
 
@@ -1744,10 +1780,10 @@ fun ShellScreen(
                             tint = MaterialTheme.colorScheme.outline
                         )
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text("请先激活应用")
+                        Text("Please activate the app first")
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(onClick = { showActivationDialog = true }) {
-                            Text("输入激活码")
+                            Text("Enter activation code")
                         }
                     }
                 }
@@ -1767,6 +1803,12 @@ fun ShellScreen(
                         Text(forcedRunBlockedMessage)
                     }
                 }
+            } else if (complianceBlockReason != null) {
+                ComplianceBlockScreen(
+                    reason = complianceBlockReason!!,
+                    actionText = "Close",
+                    onAction = { activity.finish() }
+                )
             } else if (appType == "IMAGE" || appType == "VIDEO") {
                 // 单媒体应用模式
                 MediaContentDisplay(
@@ -1813,7 +1855,7 @@ fun ShellScreen(
                                 @Suppress("DEPRECATION")
                                 allowUniversalAccessFromFileURLs = true
                                 // Allow混合内容（HTTPS 页面加载 HTTP 资源，以及 file:// Page访问网络）
-                                mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                                mixedContentMode = if (config.webViewConfig.blockMixedContent) android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW else android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                             }
                             
                             // 添加长按监听器
@@ -2389,6 +2431,7 @@ com.webtoapp.ui.components.announcement.AnnouncementDialog(
             modifier = Modifier.align(Alignment.TopStart)
         )
     }
+
     
     } // 关闭外层 Box
 }
